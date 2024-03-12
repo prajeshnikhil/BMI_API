@@ -24,6 +24,6 @@ The response format for successful requests is JSON. Below is an example of a su
 
 
 Repository Link:
-GitHub Repository: 
+GitHub Repository: https://github.com/prajeshnikhil/BMI_API
 
 Feel free to clone, fork, or contribute to the repository as needed. If you have any questions or suggestions, please don't hesitate to reach out.
