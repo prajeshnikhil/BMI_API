@@ -1,0 +1,200 @@
+import json
+import boto3
+import uuid
+
+dynamodb = dynamodb = boto3.resource('dynamodb', region_name='eu-west-1')
+dynamodb_table_name = 'ClubData'
+dynamo_db_login = 'ClubLogin'
+club_path = '/club'
+login_path = '/Login'
+register_path = '/register'
+list_club_path = '/clubs'
+bmi_path = '/bmi'
+
+def lambda_handler(event, context):
+    print('Request event: ', event)
+    response = None
+    http_method = event['httpMethod']
+    path = event['path']
+    print("Path " , path )
+
+    
+    if http_method == 'GET' and path == club_path:
+        response = get_club(event['queryStringParameters']['club_id'])
+    elif http_method == 'GET' and path == bmi_path:
+        weight = float(event['queryStringParameters']['weight'])
+        height = float(event['queryStringParameters']['height'])
+        response = get_bmi(weight, height)
+    elif http_method == 'POST' and path == club_path:
+        response = save_club(json.loads(event['body']))
+    elif http_method == 'PUT' and path == club_path:
+        request_body = json.loads(event['body'])
+        response = modify_club(request_body)
+    elif http_method == 'DELETE' and path == club_path:
+        request_body = json.loads(event['body'])
+        response = delete_club(request_body['club_id'])
+    elif http_method == 'POST' and path == login_path:
+        response = login(json.loads(event['body']))
+    elif http_method =='POST' and path == register_path:
+        print("in")
+        response = register(json.loads(event['body']))
+    elif http_method == 'GET' and path == list_club_path:
+        response = get_all()
+    else:
+        response = build_response(404, '404 Not Found')
+    return response
+
+def get_all():
+    resp =  {}
+    table = dynamodb.Table(dynamodb_table_name)
+    response = table.scan(AttributesToGet=['club_id','club_name','location', 'manager_name', 'contact'])
+    print(response)
+    return build_response(200, response['Items'])
+
+def register(register_data):
+    table = dynamodb.Table(dynamo_db_login)
+    register_data['club_id'] = str(uuid.uuid4())
+    print(register_data)
+    try:
+        table.put_item(Item=register_data)
+        body = {
+            'Operation': 'Register',
+            'Message' : 'SUCCESS',
+            'club_id' : register_data['club_id'],
+        }
+        return build_response(200, body)
+    except Exception as e:
+        print('Do your custom error handling here. I am just gonna log it: ', e)
+
+def login(login_data):
+    response = get_login(login_data['user_id'])
+    print(response)
+    if(response['password'] == login_data['password']):
+        body = {
+            'Operation': 'Login',
+            'Message': 'SUCCESS',
+            'club_id': response['club_id'],
+            'user_id' : response['user_id']
+        }
+        return build_response(200,body)
+    else:
+        body = {
+            'Operation': 'Login',
+            'Message': 'Failure'
+        }
+        return build_response(400,body)
+
+def calculate_bmi(weight,height):
+    bmi = weight / (height ** 2)
+    return bmi
+    
+    
+def interpret_bmi(bmi):
+    if bmi < 18.5:
+        return "Underweight"
+    elif bmi >= 18.5 and bmi <= 24.9:
+        return "Normal weight"
+    else:
+        return "Overweight"
+
+def get_bmi(weight, height):
+    print(weight)
+    bmi = calculate_bmi(weight, height)
+    interpretation = interpret_bmi(bmi)
+    response = {
+        "bmi": bmi,
+        "interpretation": interpretation
+    }
+    return build_response(200,response)  
+    
+
+    
+def get_login(user_id):
+    try:
+        table = dynamodb.Table(dynamo_db_login)
+        response = table.get_item(
+            Key={
+                'user_id': user_id
+            }
+        )
+        return response['Item']
+    except Exception as e:
+        print('Do your custom error handling here. I am just gonna log it: ', e)
+        
+
+def get_club(club_id):
+    try:
+        table = dynamodb.Table(dynamodb_table_name)
+        response = table.get_item(
+            Key={
+                'club_id': club_id
+            }
+        )
+        print(response)
+        if 'Item' in response:
+            return build_response(200,response['Item'])
+        else:
+            return build_response(200,{})
+    except Exception as e:
+        print('Do your custom error handling here. I am just gonna log it: ', e)
+        
+
+
+def save_club(request_body):
+    table = dynamodb.Table(dynamodb_table_name)
+    print(request_body)
+    try:
+        table.put_item(Item=request_body)
+        body = {
+            'Operation': 'SAVE',
+            'Message': 'SUCCESS'
+        }
+        return build_response(200, body)
+    except Exception as e:
+        print('Do your custom error handling here. I am just gonna log it: ', e)
+
+def modify_club(request_body):
+    return save_club(request_body)
+
+def delete_club(club_id):
+    table = dynamodb.Table(dynamodb_table_name)
+    try:
+        response = table.delete_item(
+            Key={
+                'club_id': club_id
+            },
+            ReturnValues='ALL_OLD'
+        )
+        body = {
+            'Operation': 'DELETE',
+            'Message': 'SUCCESS',
+            'Item': response['Attributes']
+        }
+        return build_response(200, body)
+    except Exception as e:
+        print('Do your custom error handling here. I am just gonna log it: ', e)
+
+# def build_response(status_code, body=None):
+#     if body is None:
+#         body = {}
+#     return {
+#         'statusCode': status_code,
+#         'headers': {
+#             'Content-Type': 'application/json'
+#         },
+#         'body': json.dumps(body)
+#     }
+
+def build_response(status_code, body=None):
+    if body is None:
+        body = {}
+    return {
+        'statusCode': status_code,
+        'headers': {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',  # Replace '*' with the actual origin of your frontend application
+            'Access-Control-Allow-Methods': 'OPTIONS, GET, POST, PUT, DELETE',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        },
+        'body': json.dumps(body)
+    }
